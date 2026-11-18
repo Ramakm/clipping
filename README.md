@@ -23,6 +23,39 @@ plus `clip_<n>_<tag>.json`:
   "suggested_title": "No way | somestreamer" }
 ```
 
+## Quick start (one command)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Ramakm/clipping/main/install.sh | bash
+```
+
+This installs everything into `~/.clipper`, adds a `clipper` command, and installs the slash
+command for your coding agent. Re-run it any time to update. Then give it a live link:
+
+| Where | Command |
+|---|---|
+| **Claude Code** | `/clip https://twitch.tv/<channel>` |
+| **Codex** | `/prompts:clip https://twitch.tv/<channel>` |
+| **Terminal** | `clipper https://twitch.tv/<channel> --now --clip-length 30` |
+
+You can describe what you want in plain words, e.g. `/clip https://twitch.tv/x 45 sec` (clip the
+next 45s right now) or `/clip https://youtube.com/@x/live auto 3 clips` (wait for chat hype moments).
+Clips are saved to `./clips` in the folder you're working in.
+
+Claude Code users can also install it as a plugin (the command is then `/clipper:clip`):
+
+```
+/plugin install clipper --marketplace Ramakm/clipping
+```
+
+(On Claude Code older than 2.1.275: `/plugin marketplace add Ramakm/clipping`, then
+`/plugin install clipper@clipping`.)
+
+The first `/clip` runs the installer automatically if the `clipper` command isn't there yet.
+
+Requirements: Python 3.11+, git, and ffmpeg (`brew install ffmpeg-full` on macOS for burned-in
+captions; see [Setup](#setup)). Windows: use WSL, or follow the manual setup below.
+
 ## How it works
 
 ```
@@ -82,10 +115,13 @@ No facecam box means a blurred-background layout. To find the box, run once with
 ## Usage
 
 ```
-python clipper.py <url> [--channel NAME] [--detect-facecam] [--no-captions] [--warmup SECONDS] [-v]
+python clipper.py <url> [--now] [--clip-length SEC] [--max-clips N] [--out DIR] [--timeout MIN]
+                        [--channel NAME] [--detect-facecam] [--no-captions] [--warmup SEC] [-v]
 ```
 
-- Clips start after `detector.warmup_seconds` (120s) of chat history.
+- `--now` skips detection and clips the next `--clip-length` seconds immediately.
+- `--max-clips N` stops after N clips; `--timeout MIN` gives up after MIN minutes.
+- In detection mode, clips start after `detector.warmup_seconds` (120s) of chat history.
 - Ctrl+C stops recording, finishes the clip in progress and cleans `buffer/`.
 - Recording reconnects automatically if the stream drops, and exits when the stream ends.
 
