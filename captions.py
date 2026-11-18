@@ -14,6 +14,7 @@ from media import run_ffmpeg
 log = logging.getLogger(__name__)
 
 WHISPER_SAMPLE_RATE = 16000
+PCM_SCALE = 32768.0  # int16 → [-1, 1)
 
 _model_lock = threading.Lock()
 _model: Any = None
@@ -54,16 +55,22 @@ def _get_model(cfg: CaptionsConfig) -> Any:
 
 def transcribe(media: Path, offset: float, duration: float, workdir: Path,
                cfg: CaptionsConfig) -> list[Word]:
-    wav = workdir / "audio.wav"
+    import numpy as np
+
+    # Decode with ffmpeg to raw 16 kHz mono PCM and hand whisper a float array. This avoids
+    # faster-whisper's PyAV decoder, whose API breaks between PyAV releases.
+    pcm = workdir / "audio.pcm"
     run_ffmpeg(["-ss", f"{offset:.3f}", "-t", f"{duration:.3f}", "-i", str(media),
-                "-vn", "-ac", "1", "-ar", str(WHISPER_SAMPLE_RATE), str(wav)])
+                "-vn", "-ac", "1", "-ar", str(WHISPER_SAMPLE_RATE), "-f", "s16le", str(pcm)])
+    audio = np.fromfile(pcm, dtype=np.int16).astype(np.float32) / PCM_SCALE
+    pcm.unlink(missing_ok=True)
+    if audio.size == 0:
+        return []
     model = _get_model(cfg)
     language = None if cfg.language == "auto" else cfg.language
-    segments, _ = model.transcribe(str(wav), language=language, word_timestamps=True, vad_filter=True)
-    words = [Word(w.start, w.end, w.word.strip())
-             for seg in segments for w in (seg.words or []) if w.word.strip()]
-    wav.unlink(missing_ok=True)
-    return words
+    segments, _ = model.transcribe(audio, language=language, word_timestamps=True, vad_filter=True)
+    return [Word(w.start, w.end, w.word.strip())
+            for seg in segments for w in (seg.words or []) if w.word.strip()]
 
 
 def group_words(words: list[Word], max_words: int, max_gap: float) -> list[list[Word]]:
