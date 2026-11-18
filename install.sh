@@ -56,7 +56,7 @@ fi
 # --- python deps -------------------------------------------------------------
 say "installing Python packages (first time takes a few minutes)"
 if command -v uv >/dev/null; then
-  uv venv -q --allow-existing -p "$PY" "$HOME_DIR/.venv"
+  uv venv -q --seed --allow-existing -p "$PY" "$HOME_DIR/.venv"   # --seed: include pip for extras
   uv pip install -q -p "$HOME_DIR/.venv/bin/python" -r "$HOME_DIR/requirements.txt"
 else
   "$PY" -m venv "$HOME_DIR/.venv"
