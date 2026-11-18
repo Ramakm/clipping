@@ -1,0 +1,77 @@
+# Live Stream Auto-Clipper — all tunables live here.
+
+buffer_minutes: 5          # how much recent video to keep on disk
+buffer_dir: buffer
+clips_dir: clips
+
+clip:
+  pre_roll: 30             # seconds before spike start (chat lags the moment)
+  post_roll: 10            # seconds after spike start
+  cooldown: 60             # min seconds between two clips
+
+recorder:
+  segment_seconds: 10
+  poll_interval: 0.5       # how often the segment list is checked (s)
+  reconnect_attempts: 5    # consecutive failed reconnects before we assume the stream ended
+  reconnect_delay: 5       # seconds between reconnect attempts
+  drift_tolerance: 8       # re-anchor video clock if it drifts this far from wall clock (s)
+  segment_wait_timeout: 60 # max seconds the cutter waits for post-roll segments
+
+chat_delay:                # chat is delivered late; evaluate the detector this many seconds in the past
+  twitch: 2                #   Twitch IRC is near-instant
+  youtube: 25              #   YouTube chat arrives in batches ~15-20s late
+
+detector:
+  window_seconds: 5       # message rate is measured over this sliding window
+  baseline_minutes: 3      # baseline mean/std computed over this history
+  z_threshold: 3.0
+  min_spike_seconds: 4     # rate must stay above threshold this long
+  max_spike_seconds: 60    # longer than this = new normal, baseline starts absorbing it
+  warmup_seconds: 120      # no clips until the baseline has this much history
+  min_std: 0.5             # std floor so a dead chat doesn't trigger on 2 messages
+  min_rate: 1.0            # absolute msg/s floor for a spike
+  hype_weight: 1.0         # score multiplier: score = z * (1 + hype_weight * hype_ratio)
+  caps_min_letters: 4      # all-caps messages with at least this many letters count as hype
+  repeat_min: 4            # a char repeated this many times ("LOOOOL") counts as hype
+  top_messages: 5
+  hype_tokens: [KEKW, LUL, LMAO, OMEGALUL, Pog, PogChamp, W, CLIP, CLIP IT, OMG, WTF, NO WAY]
+
+editor:
+  width: 1080
+  height: 1920
+  fps: 30
+  crf: 20
+  preset: veryfast
+  audio_bitrate: 160k
+  facecam_height_ratio: 0.33   # facecam takes the top third
+  blur_strength: 20            # background blur for the no-facecam layout
+  caption_y_no_facecam: 0.70   # caption height (fraction of frame) in the blur layout
+  loudnorm: "loudnorm=I=-14:TP=-1.5:LRA=11"
+
+captions:
+  enabled: true
+  model: small               # use "base" on slow CPU-only machines
+  device: auto               # auto | cpu | cuda
+  language: auto
+  max_words: 3               # words on screen at once
+  max_gap: 0.6               # break a caption group on pauses longer than this (s)
+  font: Arial Black
+  font_size: 88
+  outline: 6
+  uppercase: true
+  primary_color: "&H00FFFFFF"    # ASS &HAABBGGRR — white
+  highlight_color: "&H0000E5FF"  # yellow-ish active word
+  outline_color: "&H00000000"
+
+facecam_detect:
+  expand: 2.4                # face box is grown by this factor to include shoulders/frame
+
+# Allowlist: only clip streamers who allow clipping. Facecam box is in source pixels.
+channels:
+  somestreamer:
+    facecam: { x: 0, y: 0, w: 480, h: 270 }
+
+llm:
+  enabled: false             # not implemented in v1 — titles use a local heuristic
+  provider: anthropic
+  model: claude-haiku-5-5

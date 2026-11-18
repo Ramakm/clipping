@@ -1,0 +1,11 @@
+# core
+pyyaml>=6.0
+rich>=13.0
+streamlink>=6.0
+yt-dlp>=2024.1.1
+# YouTube chat uses yt-dlp; chat-downloader / pytchat are optional fallbacks
+faster-whisper>=1.0
+# optional: --detect-facecam
+# mediapipe
+# dev
+pytest>=8.0
