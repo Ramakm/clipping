@@ -37,6 +37,7 @@ class DetectorConfig:
     window_seconds: float
     baseline_minutes: float
     z_threshold: float
+    sensitivity: dict[str, float]
     min_spike_seconds: float
     max_spike_seconds: float
     warmup_seconds: float
@@ -51,8 +52,12 @@ class DetectorConfig:
 
 @dataclass(frozen=True)
 class EditorConfig:
+    format: str
     width: int
     height: int
+    landscape_width: int
+    landscape_height: int
+    caption_y_landscape: float
     fps: int
     crf: int
     preset: str
@@ -73,6 +78,7 @@ class CaptionsConfig:
     max_gap: float
     font: str
     font_size: int
+    font_size_landscape: int
     outline: int
     uppercase: bool
     primary_color: str

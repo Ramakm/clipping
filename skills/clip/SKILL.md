@@ -1,7 +1,7 @@
 ---
 name: clip
-description: Clip a live Twitch or YouTube stream into vertical 9:16 shorts (captions, -14 LUFS audio) with the local `clipper` tool. Use when the user runs /clip or asks to clip, capture, or make a short from a live stream link.
-argument-hint: <twitch-or-youtube-live-url> [now | auto] [N sec] [N clips]
+description: Clip a live Twitch or YouTube stream into vertical 9:16 reels/shorts or landscape 16:9 clips (captions, -14 LUFS audio) with the local `clipper` tool. Use when the user runs /clip or asks to clip, capture, or make a short/reel from a live stream link.
+argument-hint: <twitch-or-youtube-live-url> [now | auto] [reel | landscape] [N sec] [N clips]
 ---
 
 # /clip — live stream → vertical shorts
@@ -28,8 +28,16 @@ From `$ARGUMENTS` pick out:
   - `now` (default) — clip the next N seconds immediately. Fast and predictable.
   - `auto` / `hype` / "best moments" — watch chat and clip when it explodes (needs ~2 min of
     chat history first, then waits for a real spike; can take a while).
+- **Format**:
+  - "reel", "short", "tiktok", "vertical", "9:16" → `--format vertical` (1080x1920)
+  - "landscape", "horizontal", "youtube video", "16:9", "wide" → `--format landscape` (1920x1080)
+  - **Not stated → ask the user once before running**: "Reel/Short (vertical 9:16) or landscape
+    (16:9)?" Use your question tool if you have one. If you can't ask (non-interactive run),
+    use vertical.
 - **Length**: "30 sec", "45s" → `--clip-length`. Default 30.
 - **Count** (auto mode only): "3 clips" → `--max-clips`. Default 1.
+- **Sensitivity** (auto mode only): "more clips", "catch smaller moments", "sensitive" →
+  `--sensitivity high`; "only big moments" → `--sensitivity low`. Default: leave it out (medium).
 
 ## 3. Run it
 
@@ -37,12 +45,15 @@ Clips are written to `./clips` in the current folder.
 
 - now mode (finishes in about length + 30s):
   ```bash
-  clipper <URL> --now --clip-length <LEN> --out ./clips
+  clipper <URL> --now --clip-length <LEN> --format <FORMAT> --out ./clips
   ```
 - auto mode — **run in the background**, it can take many minutes:
   ```bash
-  clipper <URL> --max-clips <N> --clip-length <LEN> --timeout 30 --out ./clips
+  clipper <URL> --max-clips <N> --clip-length <LEN> --format <FORMAT> --timeout 30 --out ./clips
   ```
+  It logs a `status:` line every 30s (chat msg/s, baseline, and the rate needed for a spike).
+  If the user asks how it's going, report the latest one. If chat stays far below the spike
+  level, suggest re-running with `--sensitivity high` or switching to now mode.
 
 Add `--no-captions` if the user wants it faster or doesn't want captions.
 

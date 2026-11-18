@@ -1,7 +1,7 @@
 # Live Stream Auto-Clipper
 
-Give it a **live** Twitch or YouTube link and get ready-to-post **vertical 9:16 shorts**
-(YouTube Shorts / Reels / TikTok) while the stream is still live. It watches chat for hype
+Give it a **live** Twitch or YouTube link and get ready-to-post clips while the stream is
+still live: **vertical 9:16** for Reels / Shorts / TikTok, or **landscape 16:9** for YouTube. It watches chat for hype
 moments (chat suddenly explodes) or clips on demand, adds word-by-word captions and
 normalises the audio. 100% free and local, with no API keys.
 
@@ -36,10 +36,12 @@ The slash command understands plain words after the link:
 
 | You type | What happens |
 |---|---|
-| `/clip <link>` | Clips the next 30 seconds right now |
-| `/clip <link> 45 sec` | Clips the next 45 seconds right now |
+| `/clip <link>` | Asks reel or landscape, then clips the next 30 seconds right now |
+| `/clip <link> reel 45 sec` | Clips the next 45 seconds right now as a vertical reel |
+| `/clip <link> landscape` | Clips the next 30 seconds as a 16:9 landscape video |
 | `/clip <link> auto` | Waits for a chat hype moment and clips it (up to 30 min) |
 | `/clip <link> auto 3 clips 20 sec` | Catches 3 hype moments, 20 seconds each |
+| `/clip <link> auto more clips` | Lower trigger point, so smaller chat reactions count too |
 | `/clip <link> no captions` | Faster, skips captions |
 
 Supported links: `twitch.tv/<channel>`, `youtube.com/watch?v=<id>`, `youtube.com/@<handle>/live`,
@@ -75,7 +77,8 @@ The first clip downloads the caption model (about 500 MB, one time only).
 
 ## What you get
 
-Each clip is `clip_<n>_<tag>.mp4` (1080x1920, 30fps, H.264/AAC, −14 LUFS loudness) plus
+Each clip is `clip_<n>_<tag>.mp4` (1080x1920 vertical or 1920x1080 landscape, 30fps, H.264/AAC,
+−14 LUFS loudness) plus
 `clip_<n>_<tag>.json`:
 
 ```json
@@ -84,8 +87,9 @@ Each clip is `clip_<n>_<tag>.mp4` (1080x1920, 30fps, H.264/AAC, −14 LUFS loudn
   "suggested_title": "No way | somestreamer" }
 ```
 
-- **Layout:** facecam on top (1/3) and gameplay below (2/3) when the channel has a facecam box
-  configured; otherwise the full frame over a blurred background.
+- **Vertical layout:** facecam on top (1/3) and gameplay below (2/3) when the channel has a
+  facecam box configured; otherwise the full frame over a blurred background.
+- **Landscape layout:** the full stream frame, captions near the bottom.
 - **Captions:** big, bold, up to 3 words at a time, with the spoken word highlighted.
 
 ## Configuration
@@ -111,21 +115,24 @@ clipper https://twitch.tv/somestreamer --detect-facecam
 
 It logs a `facecam:` line to paste into the config.
 
-**Other settings** (all in the same file): clip pre/post roll, cooldown between clips,
-detection sensitivity (`detector.z_threshold`, lower means more clips), hype words, video
+**Other settings** (all in the same file): default format (`editor.format`), clip pre/post roll,
+cooldown between clips, detection sensitivity (`detector.z_threshold`, lower means more clips),
+hype words, video
 quality, caption font, colours and size, and the caption model (`captions.model: base` is
 faster on slow machines).
 
 ## Terminal usage
 
 ```
-clipper <url> [--now] [--clip-length SEC] [--max-clips N] [--out DIR] [--timeout MIN]
-              [--channel NAME] [--detect-facecam] [--no-captions] [--warmup SEC] [-v]
+clipper <url> [--now] [--format vertical|landscape] [--clip-length SEC] [--max-clips N]
+              [--sensitivity low|medium|high] [--out DIR] [--timeout MIN] [--channel NAME] [--detect-facecam] [--no-captions] [--warmup SEC] [-v]
 ```
 
 | Option | Meaning |
 |---|---|
 | `--now` | Skip detection; clip the next `--clip-length` seconds and exit |
+| `--format` | `vertical` 1080x1920 (default) or `landscape` 1920x1080 |
+| `--sensitivity` | How easily chat triggers a clip: `low` (big explosions only), `medium` (default), `high` (smaller reactions too) |
 | `--clip-length SEC` | Total clip length (default 40 = 30s before the spike + 10s after) |
 | `--max-clips N` | Stop after N clips |
 | `--timeout MIN` | Give up after MIN minutes |
@@ -136,11 +143,15 @@ clipper <url> [--now] [--clip-length SEC] [--max-clips N] [--out DIR] [--timeout
 
 Without `--now`, it runs until you press **Ctrl+C**, which finishes the clip in progress and
 cleans up. It reconnects if the stream drops and exits when the stream ends. While running it
-shows a status line:
+shows a status line (and logs it every 30s when not in a terminal, e.g. when run by an agent):
 
 ```
 ● LIVE  chat 42 msg/s  baseline 9  clips 3
+status: chat 6.6 msg/s  baseline 7.8±3.4  spike above 14.6  segments 20  clips 0
 ```
+
+A clip triggers when chat stays above the "spike above" rate for 4 seconds. If chat never gets
+close, use `--sensitivity high`.
 
 ## Update / uninstall
 
@@ -160,6 +171,7 @@ rm -rf ~/.clipper ~/.local/bin/clipper ~/.claude/skills/clip ~/.codex/prompts/cl
 | "this ffmpeg has no libass" | Captions are saved as a `.ass` file. `brew install ffmpeg-full` (macOS), then re-run the installer |
 | "could not open the stream" | The stream is offline, the link is wrong, or it's geo-blocked |
 | YouTube clips arrive later | Normal. YouTube delivers chat about 15–20s late, so detection waits for it (`chat_delay` in config) |
+| Auto mode never clips | Chat isn't spiking enough. Use `--sensitivity high` (or say "more clips"), or `--now` |
 | Slow captions | Set `captions.model: base` in the config, or use `--no-captions` |
 
 ## How it works

@@ -94,7 +94,8 @@ class ClipWorker(threading.Thread):
             words = self._captions(result, workdir)
             ass = workdir / "captions.ass" if words else None
             if ass is not None:
-                y = editor.caption_y(self.cfg.editor, self.facecam)
+                facecam = None if editor.is_landscape(self.cfg.editor) else self.facecam
+                y = editor.caption_y(self.cfg.editor, facecam)
                 ass.write_text(captions.words_to_ass(words, self.cfg.captions, self.cfg.editor.width,
                                                      self.cfg.editor.height, y), encoding="utf-8")
             try:

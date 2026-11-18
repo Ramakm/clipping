@@ -20,8 +20,14 @@ def facecam_height(cfg: EditorConfig) -> int:
     return _even(cfg.height * cfg.facecam_height_ratio)
 
 
+def is_landscape(cfg: EditorConfig) -> bool:
+    return cfg.format == "landscape"
+
+
 def caption_y(cfg: EditorConfig, facecam: FacecamBox | None) -> int:
-    """Captions sit on the seam between facecam and gameplay, or lower-middle without facecam."""
+    """Captions sit on the facecam/gameplay seam, lower-middle without facecam, near the bottom in landscape."""
+    if is_landscape(cfg):
+        return int(cfg.height * cfg.caption_y_landscape)
     return facecam_height(cfg) if facecam else int(cfg.height * cfg.caption_y_no_facecam)
 
 
@@ -37,7 +43,11 @@ def valid_facecam(box: FacecamBox | None, src_w: int, src_h: int) -> FacecamBox 
 def build_filtergraph(cfg: EditorConfig, facecam: FacecamBox | None, ass_name: str | None,
                       has_audio: bool) -> str:
     W, H = cfg.width, cfg.height
-    if facecam:
+    if is_landscape(cfg):
+        # keep the whole frame; letterbox if the source isn't 16:9
+        video = (f"[0:v]scale={W}:{H}:force_original_aspect_ratio=decrease,"
+                 f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1")
+    elif facecam:
         top = facecam_height(cfg)
         bottom = H - top
         video = (
@@ -68,7 +78,7 @@ def render(cut: CutResult, out_path: Path, cfg: EditorConfig, facecam: FacecamBo
            ass_path: Path | None) -> None:
     """Encode the final short. `ass_path` must live in the cut's working directory."""
     info = probe(cut.source)
-    facecam = valid_facecam(facecam, info.width, info.height)
+    facecam = None if is_landscape(cfg) else valid_facecam(facecam, info.width, info.height)
     workdir = cut.source.parent
     if ass_path and not has_filter("ass"):
         log.warning("this ffmpeg has no libass ('ass' filter) — captions not burned in; "

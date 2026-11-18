@@ -42,8 +42,9 @@ def test_warmup_suppresses_early_burst(cfg):
     assert run(det, [(30, 1, "hi"), (15, 30, "OMG")]) == []
 
 
-def test_short_blip_below_min_spike_seconds_ignored(cfg):
-    det = HypeDetector(cfg.detector, cfg.clip.cooldown)
+def test_short_blip_ignored_at_low_sensitivity(cfg):
+    low = dataclasses.replace(cfg.detector, z_threshold=cfg.detector.sensitivity["low"])
+    det = HypeDetector(low, cfg.clip.cooldown)
     # 1s burst only lifts the 5s window for a few ticks; make it tiny
     assert run(det, [(180, 2, "hi"), (1, 12, "W"), (60, 2, "hi")]) == []
 
@@ -90,3 +91,24 @@ def test_custom_threshold(cfg):
     strict = dataclasses.replace(cfg.detector, z_threshold=50.0)
     det = HypeDetector(strict, cfg.clip.cooldown)
     assert run(det, [(180, 2, "hi"), (15, 25, "KEKW")]) == []
+
+
+def run_counts(detector, counts):
+    """Feed exact per-second message counts. Returns spikes."""
+    spikes = []
+    for t, n in enumerate(counts, start=1):
+        for k in range(n):
+            detector.add(ChatMessage(t - 1 + k / n, "u", "hi"))
+        if (s := detector.tick(t)) is not None:
+            spikes.append(s)
+    return spikes
+
+
+def test_medium_sensitivity_catches_moderate_burst_low_misses(cfg):
+    # steady 8 msg/s (std floored to min_std=0.5): low triggers above 9.5, medium above 9.0.
+    # The burst pattern 9,9,10,9,9 keeps every 5s window at exactly 9.2 msg/s.
+    counts = [8] * 180 + [9, 9, 10, 9, 9] * 3 + [8] * 30
+    low = dataclasses.replace(cfg.detector, z_threshold=cfg.detector.sensitivity["low"])
+    med = dataclasses.replace(cfg.detector, z_threshold=cfg.detector.sensitivity["medium"])
+    assert run_counts(HypeDetector(low, cfg.clip.cooldown), counts) == []
+    assert len(run_counts(HypeDetector(med, cfg.clip.cooldown), counts)) == 1

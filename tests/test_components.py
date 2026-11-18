@@ -136,3 +136,22 @@ def test_parse_ytdlp_live_chat_line():
 
 def test_config_chat_delay(cfg):
     assert cfg.chat_delay["youtube"] > cfg.chat_delay["twitch"]
+
+
+def test_landscape_filtergraph_and_captions(cfg):
+    import dataclasses
+    ed = dataclasses.replace(cfg.editor, format="landscape", width=1920, height=1080)
+    g = build_filtergraph(ed, FacecamBox(0, 0, 480, 270), "captions.ass", has_audio=True)
+    assert "pad=1920:1080" in g and "vstack" not in g and "boxblur" not in g
+    from editor import caption_y as cy
+    assert cy(ed, FacecamBox(0, 0, 480, 270)) == int(1080 * ed.caption_y_landscape)
+
+
+def test_format_and_sensitivity_overrides(cfg):
+    from clipper import apply_overrides, parse_args
+    land = apply_overrides(cfg, parse_args(["twitch.tv/x", "--format", "landscape", "--sensitivity", "high"]))
+    assert (land.editor.format, land.editor.width, land.editor.height) == ("landscape", 1920, 1080)
+    assert land.captions.font_size == cfg.captions.font_size_landscape
+    assert land.detector.z_threshold == cfg.detector.sensitivity["high"]
+    vert = apply_overrides(cfg, parse_args(["twitch.tv/x"]))
+    assert (vert.editor.width, vert.editor.height) == (1080, 1920)

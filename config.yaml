@@ -24,7 +24,11 @@ chat_delay:                # chat is delivered late; evaluate the detector this 
 detector:
   window_seconds: 5       # message rate is measured over this sliding window
   baseline_minutes: 3      # baseline mean/std computed over this history
-  z_threshold: 3.0
+  z_threshold: 2.0         # spike = rate > baseline_mean + z_threshold * baseline_std (lower = more clips)
+  sensitivity:             # --sensitivity presets for z_threshold
+    low: 3.0               #   only big explosions
+    medium: 2.0            #   default
+    high: 1.5              #   catches smaller reactions
   min_spike_seconds: 4     # rate must stay above threshold this long
   max_spike_seconds: 60    # longer than this = new normal, baseline starts absorbing it
   warmup_seconds: 120      # no clips until the baseline has this much history
@@ -37,8 +41,12 @@ detector:
   hype_tokens: [KEKW, LUL, LMAO, OMEGALUL, Pog, PogChamp, W, CLIP, CLIP IT, OMG, WTF, NO WAY]
 
 editor:
-  width: 1080
+  format: vertical         # vertical (9:16 Shorts/Reels/TikTok) | landscape (16:9 YouTube)
+  width: 1080              # vertical size
   height: 1920
+  landscape_width: 1920
+  landscape_height: 1080
+  caption_y_landscape: 0.85    # caption height (fraction of frame) in landscape
   fps: 30
   crf: 20
   preset: veryfast
@@ -57,6 +65,7 @@ captions:
   max_gap: 0.6               # break a caption group on pauses longer than this (s)
   font: Arial Black
   font_size: 88
+  font_size_landscape: 64
   outline: 6
   uppercase: true
   primary_color: "&H00FFFFFF"    # ASS &HAABBGGRR — white

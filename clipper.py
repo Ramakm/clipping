@@ -39,6 +39,7 @@ console = Console()
 
 TICK_SECONDS = 1.0
 STATUS_REFRESH_PER_SECOND = 2
+STATUS_LOG_SECONDS = 30
 FACECAM_WAIT_SECONDS = 60
 
 
@@ -53,6 +54,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--warmup", type=float, help="override detector.warmup_seconds")
     p.add_argument("--no-captions", action="store_true", help="skip whisper captions")
     p.add_argument("--max-clips", type=int, help="stop after this many clips are saved")
+    p.add_argument("--format", choices=["vertical", "landscape"],
+                   help="vertical 9:16 (Shorts/Reels/TikTok) or landscape 16:9 (default: editor.format)")
+    p.add_argument("--sensitivity", choices=["low", "medium", "high"],
+                   help="how easily chat spikes trigger a clip (high = more clips)")
     p.add_argument("--out", type=Path, help="folder for finished clips (default: clips_dir in config)")
     p.add_argument("--timeout", type=float, help="give up after this many minutes (live mode)")
     p.add_argument("--now", action="store_true",
@@ -77,6 +82,17 @@ def apply_overrides(cfg: AppConfig, args: argparse.Namespace) -> AppConfig:
     cfg = dataclasses.replace(cfg, buffer_dir=cfg.buffer_dir / f"run_{os.getpid()}")
     if args.out is not None:
         cfg = dataclasses.replace(cfg, clips_dir=args.out.expanduser().resolve())
+    if args.sensitivity is not None:
+        z = cfg.detector.sensitivity[args.sensitivity]
+        cfg = dataclasses.replace(cfg, detector=dataclasses.replace(cfg.detector, z_threshold=z))
+    if (args.format or cfg.editor.format) == "landscape":
+        ed = cfg.editor
+        cfg = dataclasses.replace(
+            cfg,
+            editor=dataclasses.replace(ed, format="landscape", width=ed.landscape_width, height=ed.landscape_height),
+            captions=dataclasses.replace(cfg.captions, font_size=cfg.captions.font_size_landscape))
+    elif args.format == "vertical":
+        cfg = dataclasses.replace(cfg, editor=dataclasses.replace(cfg.editor, format="vertical"))
     if args.warmup is not None:
         cfg = dataclasses.replace(cfg, detector=dataclasses.replace(cfg.detector, warmup_seconds=args.warmup))
     if args.no_captions:
@@ -167,6 +183,7 @@ def run_live(cfg: AppConfig, args: argparse.Namespace) -> int:
         with Live(status(), console=console, refresh_per_second=STATUS_REFRESH_PER_SECOND,
                   get_renderable=status, transient=True):
             submitted = 0
+            next_status_log = 0.0
             deadline = time.monotonic() + args.timeout * 60 if args.timeout else None
             while not recorder.ended.is_set():
                 if deadline and time.monotonic() > deadline and not worker.busy and worker.jobs.empty():
@@ -185,6 +202,14 @@ def run_live(cfg: AppConfig, args: argparse.Namespace) -> int:
                              spike.rate, spike.baseline_mean, spike.score, ", ".join(spike.top_messages[:3]))
                     worker.submit(make_job(cfg, spike, number, channel))
                     number += 1
+                if not console.is_terminal and time.monotonic() >= next_status_log:
+                    # no live status line when piped (e.g. run by an agent) — log it instead
+                    threshold = detector.baseline_mean + cfg.detector.z_threshold * max(
+                        detector.baseline_std, cfg.detector.min_std)
+                    log.info("status: chat %.1f msg/s  baseline %.1f±%.1f  spike above %.1f  segments %d  clips %d",
+                             detector.rate, detector.baseline_mean, detector.baseline_std, threshold,
+                             len(index), worker.done)
+                    next_status_log = time.monotonic() + STATUS_LOG_SECONDS
                 time.sleep(TICK_SECONDS)
     except KeyboardInterrupt:
         interrupted = True
