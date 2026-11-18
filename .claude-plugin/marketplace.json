@@ -1,0 +1,11 @@
+{
+  "name": "clipping",
+  "owner": { "name": "Ramakm" },
+  "plugins": [
+    {
+      "name": "clipper",
+      "source": "./",
+      "description": "Clip live Twitch/YouTube streams into vertical shorts with /clip <url>"
+    }
+  ]
+}

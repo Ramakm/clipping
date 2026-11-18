@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import logging
+import os
 import queue
+import shutil
 import sys
 import threading
 import time
@@ -50,21 +52,52 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--detect-facecam", action="store_true", help="suggest a facecam box with MediaPipe")
     p.add_argument("--warmup", type=float, help="override detector.warmup_seconds")
     p.add_argument("--no-captions", action="store_true", help="skip whisper captions")
+    p.add_argument("--max-clips", type=int, help="stop after this many clips are saved")
+    p.add_argument("--out", type=Path, help="folder for finished clips (default: clips_dir in config)")
+    p.add_argument("--timeout", type=float, help="give up after this many minutes (live mode)")
+    p.add_argument("--now", action="store_true",
+                   help="skip detection: clip the next clip-length seconds of the stream, then exit")
+    p.add_argument("--clip-length", type=float,
+                   help="total clip seconds (pre/post roll scaled, keeping their ratio)")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
     if bool(args.url) == bool(args.file):
         p.error("give either a stream URL or --file (offline replay)")
     if args.file and not args.chat:
         p.error("--file needs --chat")
+    if args.now:
+        if args.file:
+            p.error("--now is for live streams only")
+        args.max_clips = 1
     return args
 
 
 def apply_overrides(cfg: AppConfig, args: argparse.Namespace) -> AppConfig:
+    # private buffer per run, so several clipper processes never touch each other's segments
+    cfg = dataclasses.replace(cfg, buffer_dir=cfg.buffer_dir / f"run_{os.getpid()}")
+    if args.out is not None:
+        cfg = dataclasses.replace(cfg, clips_dir=args.out.expanduser().resolve())
     if args.warmup is not None:
         cfg = dataclasses.replace(cfg, detector=dataclasses.replace(cfg.detector, warmup_seconds=args.warmup))
     if args.no_captions:
         cfg = dataclasses.replace(cfg, captions=dataclasses.replace(cfg.captions, enabled=False))
+    if args.clip_length is not None:
+        total = cfg.clip.pre_roll + cfg.clip.post_roll
+        pre = args.clip_length * cfg.clip.pre_roll / total
+        cfg = dataclasses.replace(cfg, clip=dataclasses.replace(
+            cfg.clip, pre_roll=pre, post_roll=args.clip_length - pre))
     return cfg
+
+
+def manual_spike(cfg: AppConfig, video_start: float) -> SpikeEvent:
+    """A synthetic spike whose clip window starts at the first buffered frame (for --now)."""
+    log.info("✋ manual clip: recording the next %.0fs", cfg.clip.pre_roll + cfg.clip.post_roll)
+    return SpikeEvent(start=video_start + cfg.clip.pre_roll, detected_at=time.time(), score=0.0, rate=0.0,
+                      baseline_mean=0.0, baseline_std=0.0, hype_ratio=0.0, top_messages=(), tag="manual")
+
+
+def reached_limit(args: argparse.Namespace, submitted: int) -> bool:
+    return args.max_clips is not None and submitted >= args.max_clips
 
 
 def check_allowlist(cfg: AppConfig, channel: str) -> None:
@@ -133,10 +166,21 @@ def run_live(cfg: AppConfig, args: argparse.Namespace) -> int:
     try:
         with Live(status(), console=console, refresh_per_second=STATUS_REFRESH_PER_SECOND,
                   get_renderable=status, transient=True):
+            submitted = 0
+            deadline = time.monotonic() + args.timeout * 60 if args.timeout else None
             while not recorder.ended.is_set():
+                if deadline and time.monotonic() > deadline and not worker.busy and worker.jobs.empty():
+                    log.info("--timeout reached (%.0f min)", args.timeout)
+                    break
+                if reached_limit(args, submitted) and worker.done + worker.failed >= submitted:
+                    log.info("reached --max-clips %d", args.max_clips)
+                    break
                 _drain(chat_q, detector)
                 spike = detector.tick(time.time() - chat_delay)
-                if spike:
+                if args.now and submitted == 0 and len(index):
+                    spike = manual_spike(cfg, index.snapshot()[0].wall_start)
+                if spike and not reached_limit(args, submitted):
+                    submitted += 1
                     log.info("🔥 spike: %.1f msg/s (baseline %.1f) score %.1f — %s",
                              spike.rate, spike.baseline_mean, spike.score, ", ".join(spike.top_messages[:3]))
                     worker.submit(make_job(cfg, spike, number, channel))
@@ -153,7 +197,7 @@ def run_live(cfg: AppConfig, args: argparse.Namespace) -> int:
             worker.join()
         except KeyboardInterrupt:
             log.warning("forced exit — in-progress clip abandoned")
-        clean_buffer(cfg.buffer_dir)
+        shutil.rmtree(cfg.buffer_dir, ignore_errors=True)
 
     if recorder.error and not interrupted:
         log.error(recorder.error)
@@ -203,7 +247,7 @@ def run_replay(cfg: AppConfig, args: argparse.Namespace) -> int:
     worker = ClipWorker(cfg, index, facecam, offset_label)
     worker.start()
     detector = HypeDetector(cfg.detector, cfg.clip.cooldown)
-    number = next_clip_number(cfg.clips_dir)
+    number = first = next_clip_number(cfg.clips_dir)
     end = index.latest_end() or 0.0
 
     i, t = 0, 0.0
@@ -212,7 +256,7 @@ def run_replay(cfg: AppConfig, args: argparse.Namespace) -> int:
             while i < len(messages) and messages[i].ts <= t:
                 detector.add(messages[i])
                 i += 1
-            if spike := detector.tick(t):
+            if (spike := detector.tick(t)) and not reached_limit(args, number - first):
                 log.info("🔥 spike at %s: %.1f msg/s (baseline %.1f) score %.1f — %s", offset_label(spike.start),
                          spike.rate, spike.baseline_mean, spike.score, ", ".join(spike.top_messages[:3]))
                 worker.submit(make_job(cfg, spike, number, channel))
@@ -223,7 +267,7 @@ def run_replay(cfg: AppConfig, args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         log.info("interrupted")
     finally:
-        clean_buffer(cfg.buffer_dir)
+        shutil.rmtree(cfg.buffer_dir, ignore_errors=True)
     log.info("replay done — %d clip(s) saved, %d failed → %s", worker.done, worker.failed, cfg.clips_dir)
     return 0 if worker.failed == 0 else 1
 
